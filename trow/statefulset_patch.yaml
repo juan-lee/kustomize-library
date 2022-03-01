@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: trow-set
+  namespace: trow
+spec:
+  replicas: 3
+  template:
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: kubernetes.azure.com/mode
+                operator: In
+                values:
+                - system
+            weight: 100
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      containers:
+      - name: trow-pod
+        args:
+        - --no-tls
+        - --allow-docker-official
+        - --proxy-docker-hub
+      volumes:
+        - name: trow-pass
+          secret:
+            optional: true

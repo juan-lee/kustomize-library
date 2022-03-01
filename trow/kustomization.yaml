@@ -1,0 +1,7 @@
+resources:
+- namespace.yaml
+- https://github.com/ContainerSolutions/trow/install/base
+
+patchesStrategicMerge:
+- service_patch.yaml
+- statefulset_patch.yaml

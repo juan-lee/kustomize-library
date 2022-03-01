@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: stressful
+spec:
+  completions: 50
+  parallelism: 50
+  template:
+    spec:
+      tolerations:
+        - key: "kubernetes.azure.com/scalesetpriority"
+          operator: "Equal"
+          value: "spot"
+          effect: "NoSchedule"
+      containers:
+      - name: stressful
+        image: localhost:31000/f/docker/nginx:alpine
+        imagePullPolicy: Always
+        command: ["sleep", "60"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 2Gi
+          limits:
+            cpu: 1
+            memory: 4Gi
+      restartPolicy: Never
+  backoffLimit: 4

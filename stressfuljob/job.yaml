@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: stressful
+spec:
+  completions: 60
+  parallelism: 60
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      containers:
+      - name: stressful
+        image: juanlee/stressful:latest
+        imagePullPolicy: Always
+        command: ["/stress-ng",  "--cpu", "1", "--io", "1", "--vm", "1", "--vm-bytes", "1G", "--timeout", "5m", "-v", "--metrics"]
+        resources:
+          requests:
+            cpu: 10m
+            memory: 100Mi
+          limits:
+            cpu: 3
+            memory: 3G
+      restartPolicy: Never
+  backoffLimit: 4
