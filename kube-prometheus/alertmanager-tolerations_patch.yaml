@@ -1,0 +1,8 @@
+apiVersion: apps/v1
+kind: Alertmanager
+metadata:
+  name: not-important
+spec:
+  tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists

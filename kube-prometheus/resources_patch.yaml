@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: monitoring
+spec:
+  template:
+    spec:
+      containers:
+      - name: node-exporter
+        resources:
+          limits:
+            cpu: 600m
+            memory: 180Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+spec:
+  template:
+    spec:
+      containers:
+      - name: blackbox-exporter
+        resources:
+          limits:
+            cpu: 100m
+            memory: 40Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+spec:
+  template:
+    spec:
+      containers:
+      - name: kube-rbac-proxy-main
+        resources:
+          limits:
+            cpu: 100m
+      - name: kube-rbac-proxy-self
+        resources:
+          limits:
+            cpu: 100m

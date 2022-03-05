@@ -1,0 +1,61 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app.kubernetes.io/name: kube-prometheus
+    app.kubernetes.io/part-of: kube-prometheus
+    prometheus: k8s
+    role: alert-rules
+  name: kube-proxy-monitoring-rules
+  namespace: monitoring
+spec:
+  groups:
+  - name: kube-proxy
+    rules:
+    - alert: KubeProxyDown
+      annotations:
+        message: kube-proxy has disappeared from Prometheus target discovery.
+      expr: |
+        absent(up{job="kube-proxy"} == 1)
+      for: 15m
+      labels:
+        severity: critical
+    - alert: KubeProxyProgrammingLatencyHigh
+      annotations:
+        message: kube-proxy network programming has 99th percentile latency of {{ $value }} seconds for node
+          {{ $labels.instance }}.
+      expr: |
+        histogram_quantile(0.99, sum(rate(kubeproxy_network_programming_duration_seconds_bucket{job="kube-proxy"}[5m])) by(instance, le)) > 1
+      for: 10m
+      labels:
+        severity: critical
+    - alert: KubeProxySyncLatencyHigh
+      annotations:
+        message: kube-proxy sync proxy rules has 99th percentile latency of {{ $value }} seconds for node
+          {{ $labels.instance }}.
+      expr: |
+        histogram_quantile(0.99, sum(rate(kubeproxy_sync_proxy_rules_duration_seconds_bucket{job="kube-proxy"}[5m])) by(instance, le)) > 1
+      for: 10m
+      labels:
+        severity: critical
+    - alert: KubeProxyFailureCount
+      annotations:
+        message: kube-proxy iptables restore failed on {{ $labels.instance }}.
+      expr: |
+        sum(rate(kubeproxy_sync_proxy_rules_iptables_restore_failures_total{job="kube-proxy"}[5m])) by (instance) > 0
+      for: 10m
+      labels:
+        severity: warning
+    - alert: KubeProxyStale
+      annotations:
+        message: kube-proxy is stale on {{ $labels.instance }}.
+      expr: |
+        (
+          max_over_time(kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kube-proxy"}[5m])
+        - ignoring(remote_name, url) group_right
+          max_over_time(kubeproxy_sync_proxy_rules_last_queued_timestamp_seconds{job="kube-proxy"}[5m])
+        )
+        > 30
+      for: 10m
+      labels:
+        severity: warning
