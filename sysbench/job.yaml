@@ -8,6 +8,11 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
+      tolerations:
+        - key: "kubernetes.azure.com/scalesetpriority"
+          operator: "Equal"
+          value: "spot"
+          effect: "NoSchedule"
       initContainers:
       - name: prepare
         image: juanlee/sysbench:latest
