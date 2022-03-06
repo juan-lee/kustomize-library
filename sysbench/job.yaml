@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: sysbench
+spec:
+  completions: 1000
+  parallelism: 100
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      initContainers:
+      - name: prepare
+        image: juanlee/sysbench:latest
+        imagePullPolicy: Always
+        command:
+        - /sysbench
+        - fileio 
+        - prepare
+        - --file-test-mode=rndrw
+        volumeMounts:
+        - mountPath: /working
+          name: fileio-volume
+      containers:
+      - name: sysbench
+        image: juanlee/sysbench:latest
+        imagePullPolicy: Always
+        command:
+        - /sysbench
+        - fileio 
+        - run
+        - --file-test-mode=rndrw
+        - --events=1000000
+        - --time=0
+        resources:
+          requests:
+            cpu: 10m
+            memory: 100Mi
+          limits:
+            cpu: 1
+            memory: 1G
+        volumeMounts:
+        - mountPath: /working
+          name: fileio-volume
+      volumes:
+      - name: fileio-volume
+        emptyDir: {}
+      restartPolicy: Never
+  backoffLimit: 4
