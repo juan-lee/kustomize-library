@@ -38,11 +38,11 @@ spec:
         - --time=0
         resources:
           requests:
-            cpu: 10m
-            memory: 100Mi
+            cpu: 100m
+            memory: 2Gi
           limits:
             cpu: 1
-            memory: 1G
+            memory: 2Gi
         volumeMounts:
         - mountPath: /working
           name: fileio-volume
