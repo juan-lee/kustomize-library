@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: sysbench
+  name: sysbench
 spec:
   completions: 1000
   parallelism: 100
