@@ -3,9 +3,8 @@ kind: Job
 metadata:
   name: sysbench
 spec:
-  completions: 100
-  parallelism: 100
-  ttlSecondsAfterFinished: 3600
+  completions: 50
+  parallelism: 50
   template:
     spec:
       tolerations:
