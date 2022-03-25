@@ -3,8 +3,8 @@ kind: Job
 metadata:
   name: sysbench
 spec:
-  completions: 50
-  parallelism: 50
+  completions: 1000
+  parallelism: 1000
   template:
     spec:
       tolerations:
@@ -49,4 +49,4 @@ spec:
       - name: fileio-volume
         emptyDir: {}
       restartPolicy: Never
-  backoffLimit: 4
+  backoffLimit: 100
