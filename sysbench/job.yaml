@@ -33,7 +33,7 @@ spec:
         - fileio 
         - run
         - --file-test-mode=rndrw
-        - --events=1000000
+        - --events=100000
         - --time=0
         resources:
           requests:
