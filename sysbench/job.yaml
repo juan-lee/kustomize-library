@@ -47,6 +47,14 @@ spec:
           name: fileio-volume
       volumes:
       - name: fileio-volume
-        emptyDir: {}
+        ephemeral:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 10Gi
+              storageClassName: managed-csi-premium
       restartPolicy: Never
   backoffLimit: 100
