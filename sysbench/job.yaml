@@ -3,8 +3,8 @@ kind: Job
 metadata:
   name: sysbench
 spec:
-  completions: 1000
-  parallelism: 1000
+  completions: 500
+  parallelism: 500
   template:
     spec:
       tolerations:
@@ -54,7 +54,7 @@ spec:
                 - ReadWriteOnce
               resources:
                 requests:
-                  storage: 10Gi
+                  storage: 256Gi
               storageClassName: managed-csi-premium
       restartPolicy: Never
   backoffLimit: 100
