@@ -1,0 +1,30 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: az-login
+spec:
+  workspaces:
+  - name: secrets
+    mountPath: /tekton/home
+  params:
+  - name: az-image
+    description: Azure CLI container image to run this task
+    default: mcr.microsoft.com/azure-cli:latest
+  steps:
+  - name: az-login
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+
+      mkdir -p "${AZURE_CONFIG_DIR}"
+      az login \
+        --service-principal \
+        -t $AZURE_TENANT_ID \
+        -u $AZURE_CLIENT_ID \
+        --federated-token $(cat $AZURE_FEDERATED_TOKEN_FILE) \
+        -o yaml
+  - name: az-account-show
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+      az account show

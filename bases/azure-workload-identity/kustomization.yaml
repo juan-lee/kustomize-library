@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- https://github.com/Azure/azure-workload-identity/releases/download/v0.11.0/azure-wi-webhook.yaml
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: azure-wi-webhook-controller-manager
+        namespace: azure-workload-identity-system
+      spec:
+        template:
+          spec:
+            containers:
+            - name: manager
+              args:
+              - --arc-cluster=false
+
+configMapGenerator:
+- name: azure-wi-webhook-config
+  namespace: azure-workload-identity-system
+  behavior: merge
+  envs:
+  - azure-wi-webhook-config.env
+  options:
+    disableNameSuffixHash: true

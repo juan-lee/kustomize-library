@@ -1,0 +1,134 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: disk-perf-pipeline
+spec:
+  params:
+  - name: az-image
+    description: Azure CLI container image to run this task
+    default: mcr.microsoft.com/azure-cli:latest
+  workspaces:
+  - name: shared-data
+  tasks:
+  - name: get-cluster-name
+    taskRef:
+      name: generate-cluster-name
+    params:
+      - name: prefix
+        value: disk-perf
+  - name: login
+    taskRef:
+      name: az-login
+    runAfter: [get-cluster-name]
+    params:
+      - name: az-image
+        value: $(params.az-image)
+    workspaces:
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets
+  - name: create-cluster
+    taskRef:
+      name: az-aks-create
+    runAfter: [login]
+    params:
+      - name: cluster-name
+        value: $(tasks.get-cluster-name.results.cluster-name)
+      - name: resource-group
+        value: tekton-clusters
+      - name: location
+        value: southcentralus
+      - name: az-image
+        value: $(params.az-image)
+    workspaces:
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets
+  - name: get-credentials
+    taskRef:
+      name: az-aks-get-credentials
+    runAfter: [create-cluster]
+    params:
+      - name: cluster-name
+        value: $(tasks.get-cluster-name.results.cluster-name)
+      - name: resource-group
+        value: tekton-clusters
+      - name: az-image
+        value: $(params.az-image)
+    workspaces:
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets
+  - name: fetch-repo
+    taskRef:
+      name: git-clone
+    runAfter: [get-credentials]
+    params:
+    - name: url
+      value: https://github.com/vmware-tanzu/k-bench
+    - name: revision
+      value: master
+    workspaces:
+    - name: output
+      workspace: shared-data
+      subPath: output
+  - name: build-kbench
+    runAfter: [fetch-repo]  # Wait until the clone is done before reading the readme.
+    workspaces:
+    - name: source
+      workspace: shared-data
+      subPath: output
+    taskRef:
+      name: golang-build
+    params:
+    - name: package
+      value: github.com/vmware-tanzu/k-bench
+    - name: flags
+      value: -o $(workspaces.source.path)/bin/kbench
+  - name: run-kbench
+    runAfter: [build-kbench]  # Wait until the clone is done before reading the readme.
+    workspaces:
+    - name: source
+      workspace: shared-data
+      subPath: output
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets
+    taskSpec:
+      workspaces:
+      - name: source
+      - name: secrets
+        mountPath: /tekton/home
+      steps:
+      - name: kbench-default
+        image: zshusers/zsh:4.3.15
+        script: |
+          #!/usr/bin/env zsh
+          echo 'Running kbench...'
+          pwd
+          ls -al
+          ls -al $(workspaces.source.path)
+          ls -al $(workspaces.source.path)/config
+          ls -al $(workspaces.source.path)/config/default
+          $(workspaces.source.path)/bin/kbench -benchconfig $(workspaces.source.path)/config/default/config.json
+          pwd
+          ls -al
+          ls -al $(workspaces.source.path)
+          ls -al $(workspaces.source.path)/config
+          ls -al $(workspaces.source.path)/config/default
+          cat ./kbench.log
+  finally:
+  - name: delete-cluster
+    taskRef:
+      name: az-aks-delete
+    params:
+      - name: cluster-name
+        value: $(tasks.get-cluster-name.results.cluster-name)
+      - name: resource-group
+        value: tekton-clusters
+      - name: az-image
+        value: $(params.az-image)
+    workspaces:
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets

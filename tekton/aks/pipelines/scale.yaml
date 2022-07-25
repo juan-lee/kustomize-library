@@ -1,0 +1,177 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: scale
+spec:
+  params:
+  - name: resource-group
+    type: string
+    default: 'tekton-clusters'
+  - name: location
+    type: string
+    default: 'southcentralus'
+  - name: node-count
+    type: string
+    default: '3'
+  - name: target-node-count
+    type: string
+    default: '100'
+  - name: sku-tier
+    type: string
+    default: 'Free'
+  - name: node-vm-size
+    type: string
+    default: 'Standard_DS2_v2'
+  - name: node-osdisk-type
+    type: string
+    default: 'Managed'
+  - name: node-osdisk-size
+    type: string
+    default: '128'
+  - name: nodepool-tags
+    type: string
+    default: ''
+  - name: network-plugin
+    type: string
+    default: 'kubenet'
+  tasks:
+  - name: create-cluster
+    taskRef:
+      name: az-aks-create
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: location
+      value: $(params.location)
+    - name: sku-tier
+      value: $(params.sku-tier)
+    - name: node-count
+      value: $(params.node-count)
+    - name: node-vm-size
+      value: $(params.node-vm-size)
+    - name: node-osdisk-type
+      value: $(params.node-osdisk-type)
+    - name: node-osdisk-size
+      value: $(params.node-osdisk-size)
+    - name: network-plugin
+      value: $(params.network-plugin)
+    - name: nodepool-tags
+      value: $(params.nodepool-tags)
+  - name: install-kube-prometheus
+    taskRef:
+      name: aks-kubectl
+    runAfter: [create-cluster]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        until kubectl apply -k "${@}"; do
+          echo "Waiting for kube-prometheus CRDs..."
+          sleep 1
+        done
+    - name: args
+      value:
+      - "https://github.com/prometheus-operator/kube-prometheus"
+  - name: install-microservices-demo
+    taskRef:
+      name: aks-kubectl
+    runAfter: [create-cluster]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: "kubectl apply -f $@"
+    - name: args
+      value:
+      - "https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/release/v0.2.2/release/kubernetes-manifests.yaml"
+  - name: watch-scale-up
+    taskRef:
+      name: aks-kubectl
+    runAfter: [install-kube-prometheus, install-microservices-demo]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        until [ "$(kubectl get no --no-headers | grep ' Ready ' | wc -l)" -eq "$(params.target-node-count)" ]; do
+          sleep 5
+          echo "[$(date -u)] $(kubectl get no --no-headers | grep ' Ready '| wc -l) of $(kubectl get no --no-headers | wc -l) nodes are ready"
+        done
+  - name: scale-up-cluster
+    taskRef:
+      name: az-aks-scale
+    runAfter: [install-kube-prometheus, install-microservices-demo]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: node-count
+      value: $(params.target-node-count)
+  - name: dump-results-post-scale-up
+    taskRef:
+      name: aks-kubectl
+    runAfter: [scale-up-cluster, watch-scale-up]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl version
+        kubectl cluster-info
+        kubectl auth can-i '*' '*'
+        kubectl get node -o wide
+        kubectl top node
+        kubectl get pod -A -o wide
+        kubectl top pod -A
+  - name: scale-down-cluster
+    taskRef:
+      name: az-aks-scale
+    runAfter: [dump-results-post-scale-up]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: node-count
+      value: $(params.node-count)
+  - name: dump-results-post-scale-down
+    taskRef:
+      name: aks-kubectl
+    runAfter: [scale-down-cluster]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl version
+        kubectl cluster-info
+        kubectl auth can-i '*' '*'
+        kubectl get node -o wide
+        kubectl top node
+        kubectl get pod -A -o wide
+        kubectl top pod -A
+  finally:
+  - name: delete-cluster
+    taskRef:
+      name: az-aks-delete
+    params:
+      - name: cluster-name
+        value: $(context.pipelineRun.name)
+      - name: resource-group
+        value: $(params.resource-group)
+      - name: node-count
+        value: "3"

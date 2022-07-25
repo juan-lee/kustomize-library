@@ -1,0 +1,60 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: aks-kubectl
+spec:
+  results:
+  - name: output-result
+    description: Output results for use in other task's input.
+  params:
+  - name: cluster-name
+    type: string
+  - name: resource-group
+    type: string
+  - name: script
+    type: string
+    default: "kubectl $@"
+  - name: args
+    type: array
+    default:
+    - "help"
+  - name: az-image
+    type: string
+    default: mcr.microsoft.com/azure-cli:latest
+  - name: image
+    type: string
+    default: gcr.io/cloud-builders/kubectl:latest
+  stepTemplate:
+    env:
+    - name: "AZURE_CONFIG_DIR"
+      value: "/workspace/.azure"
+  steps:
+  - name: az-login
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+
+      mkdir -p "${AZURE_CONFIG_DIR}"
+      az login \
+        --service-principal \
+        -t $AZURE_TENANT_ID \
+        -u $AZURE_CLIENT_ID \
+        --federated-token $(cat $AZURE_FEDERATED_TOKEN_FILE) \
+        -o yaml
+  - name: az-aks-get-credentials
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+
+      mkdir -p "/workspace/.kube"
+      az aks get-credentials -g $(params.resource-group) -n $(params.cluster-name) -f "/workspace/.kube/config"
+  - name: kubectl
+    image: $(params.image)
+    env:
+    - name: "KUBECONFIG"
+      value: "/workspace/.kube/config"
+    script: |
+      #!/usr/bin/env bash
+      $(params.script)
+    args:
+    - "$(params.args)"

@@ -1,0 +1,139 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: large-cluster
+spec:
+  params:
+  - name: az-image
+    description: Azure CLI container image to run this task
+    default: mcr.microsoft.com/azure-cli:latest
+  workspaces:
+  - name: shared-data
+  tasks:
+  - name: get-cluster-name
+    taskRef:
+      name: generate-cluster-name
+    params:
+      - name: prefix
+        value: large
+  - name: login
+    taskRef:
+      name: az-login
+    runAfter: [get-cluster-name]
+    params:
+      - name: az-image
+        value: $(params.az-image)
+    workspaces:
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets
+  - name: create-cluster
+    taskRef:
+      name: az-aks-create
+    runAfter: [login]
+    params:
+      - name: cluster-name
+        value: $(tasks.get-cluster-name.results.cluster-name)
+      - name: resource-group
+        value: tekton-clusters
+      - name: location
+        value: southcentralus
+      - name: node-count
+        value: '100'
+      - name: network-plugin
+        value: azure
+      - name: node-vm-size
+        value: Standard_D2s_v3
+      - name: az-image
+        value: $(params.az-image)
+    workspaces:
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets
+  - name: get-credentials
+    taskRef:
+      name: az-aks-get-credentials
+    runAfter: [create-cluster]
+    params:
+      - name: cluster-name
+        value: $(tasks.get-cluster-name.results.cluster-name)
+      - name: resource-group
+        value: tekton-clusters
+      - name: az-image
+        value: $(params.az-image)
+    workspaces:
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets
+  - name: fetch-repo
+    taskRef:
+      name: git-clone
+    runAfter: [get-credentials]
+    params:
+    - name: url
+      value: https://github.com/vmware-tanzu/sonobuoy
+    - name: revision
+      value: v0.50.0
+    workspaces:
+    - name: output
+      workspace: shared-data
+      subPath: output
+  - name: build-sonobuoy
+    runAfter: [fetch-repo]  # Wait until the clone is done before reading the readme.
+    workspaces:
+    - name: source
+      workspace: shared-data
+      subPath: output
+    taskRef:
+      name: golang-build
+    params:
+    - name: package
+      value: github.com/vmware-tanzu/sonobuoy
+    - name: packages
+      value: github.com/vmware-tanzu/sonobuoy
+    - name: flags
+      value: -o $(workspaces.source.path)/bin/sonobuoy -ldflags="-s -w -X github.com/vmware-tanzu/sonobuoy/pkg/buildinfo.Version=v0.50.0 -X github.com/vmware-tanzu/sonobuoy/pkg/buildinfo.GitSHA=d9ec0c19cf8b409f5599564188f5799f4526781b"
+  - name: run-sonobuoy
+    runAfter: [build-sonobuoy]  # Wait until the clone is done before reading the readme.
+    workspaces:
+    - name: source
+      workspace: shared-data
+      subPath: output
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets
+    timeout: 2h
+    taskSpec:
+      workspaces:
+      - name: source
+      - name: secrets
+        mountPath: /tekton/home
+      steps:
+      - name: sonobuoy-default
+        image: gcr.io/cloud-builders/kubectl:latest
+        timeout: 2h
+        script: |
+          #!/usr/bin/env bash
+          export PATH="${PATH}:$(workspaces.source.path)/bin"
+          echo 'Running sonobuoy...'
+          sonobuoy run --wait --mode quick
+          kubectl logs -n sonobuoy sonobuoy
+          echo 'Retrieving results...'
+          results=$(sonobuoy retrieve)
+          echo 'Dumping results...'
+          sonobuoy results $results
+  finally:
+  - name: delete-cluster
+    taskRef:
+      name: az-aks-delete
+    params:
+      - name: cluster-name
+        value: $(tasks.get-cluster-name.results.cluster-name)
+      - name: resource-group
+        value: tekton-clusters
+      - name: az-image
+        value: $(params.az-image)
+    workspaces:
+    - name: secrets
+      workspace: shared-data
+      subPath: secrets

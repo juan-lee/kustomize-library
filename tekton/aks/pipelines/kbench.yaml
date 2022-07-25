@@ -1,0 +1,77 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: kbench
+spec:
+  resources:
+  - name: kbench-git
+    type: git
+  params:
+  - name: kbench-config-path
+    type: string
+    default: config/default/config.json
+  - name: sku-tier
+    type: string
+    default: 'Free'
+  - name: node-count
+    type: string
+    default: '3'
+  - name: node-vm-size
+    type: string
+    default: 'Standard_DS2_v2'
+  - name: node-osdisk-type
+    type: string
+    default: 'Managed'
+  - name: node-osdisk-size
+    type: string
+    default: '128'
+  - name: network-plugin
+    type: string
+    default: 'kubenet'
+  tasks:
+  - name: create-cluster
+    taskRef:
+      name: az-aks-create
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: tekton-clusters
+    - name: location
+      value: southcentralus
+    - name: sku-tier
+      value: $(params.sku-tier)
+    - name: node-count
+      value: $(params.node-count)
+    - name: node-vm-size
+      value: $(params.node-vm-size)
+    - name: node-osdisk-type
+      value: $(params.node-osdisk-type)
+    - name: node-osdisk-size
+      value: $(params.node-osdisk-size)
+    - name: network-plugin
+      value: $(params.network-plugin)
+  - name: run-kbench
+    runAfter: [create-cluster]  # Wait until the clone is done before reading the readme.
+    resources:
+      inputs:
+      - name: repo
+        resource: kbench-git
+    taskRef:
+      name: kbench
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: tekton-clusters
+    - name: benchconfig
+      value: $(params.kbench-config-path)
+  finally:
+  - name: delete-cluster
+    taskRef:
+      name: az-aks-delete
+    params:
+      - name: cluster-name
+        value: $(context.pipelineRun.name)
+      - name: resource-group
+        value: tekton-clusters

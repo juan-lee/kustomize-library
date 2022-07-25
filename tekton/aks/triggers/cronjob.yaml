@@ -1,0 +1,15 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hourly-test-run
+spec:
+  schedule: "0 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: curl
+            image: curlimages/curl
+            args: ["curl", "-X", "POST", "--data", "{}", "el-cron-listener.tekton.svc.cluster.local:8080"]
+          restartPolicy: Never

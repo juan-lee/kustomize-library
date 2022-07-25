@@ -1,0 +1,66 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: batch-spot
+spec:
+  params:
+  - name: resource-group
+    type: string
+    default: 'tekton-clusters'
+  - name: cluster-name
+    type: string
+    default: 'batch'
+  tasks:
+  - name: kubectl-create-job
+    taskRef:
+      name: aks-kubectl
+    params:
+    - name: cluster-name
+      value: $(params.cluster-name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl -n default apply -k github.com/juan-lee/kustomize-library/sysbench
+  - name: kubectl-wait-job-complete
+    taskRef:
+      name: aks-kubectl
+    runAfter: [kubectl-create-job]
+    params:
+    - name: cluster-name
+      value: $(params.cluster-name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl -n default wait job/sysbench --for=condition=Complete --timeout=1h
+  - name: kubectl-wait-node-delete
+    taskRef:
+      name: aks-kubectl
+    runAfter: [kubectl-wait-job-complete]
+    params:
+    - name: cluster-name
+      value: $(params.cluster-name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl wait --for=delete node -l kubernetes.azure.com/agentpool=spot --timeout=1h
+  finally:
+  - name: dump-results-and-cleanup
+    taskRef:
+      name: aks-kubectl
+    params:
+    - name: cluster-name
+      value: $(params.cluster-name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl version
+        kubectl cluster-info
+        kubectl auth can-i '*' '*'
+        kubectl get node -o wide
+        kubectl get pod -A -o wide
+        kubectl get job -A -o wide
+        kubectl -n default delete job sysbench

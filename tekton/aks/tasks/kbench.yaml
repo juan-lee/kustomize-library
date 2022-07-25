@@ -1,0 +1,66 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: kbench
+spec:
+  resources:
+    inputs:
+    - name: repo
+      type: git
+  params:
+  - name: cluster-name
+    type: string
+  - name: resource-group
+    type: string
+  - name: benchconfig
+    type: string
+    default: config/default/config.json
+  - name: az-image
+    description: Azure CLI container image to run this task
+    default: mcr.microsoft.com/azure-cli:latest
+  stepTemplate:
+    env:
+    - name: "AZURE_CONFIG_DIR"
+      value: "/workspace/.azure"
+  steps:
+  - name: az-login
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+
+      mkdir -p "${AZURE_CONFIG_DIR}"
+      az login \
+        --service-principal \
+        -t $AZURE_TENANT_ID \
+        -u $AZURE_CLIENT_ID \
+        --federated-token $(cat $AZURE_FEDERATED_TOKEN_FILE) \
+        -o yaml
+  - name: az-aks-get-credentials
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+      az aks get-credentials -g $(params.resource-group) -n $(params.cluster-name)
+  - name: build
+    image: docker.io/library/golang:latest
+    script: |
+      #!/usr/bin/env bash
+      echo 'Building kbench...'
+      BIN_PATH="${PWD}/bin"
+      SRC_PATH="$GOPATH/src/github.com/vmware-tanzu/k-bench"
+      mkdir -p $SRC_PATH
+      cp -R "$(resources.inputs.repo.path)"/* $SRC_PATH
+      cd $SRC_PATH
+      go build -v -o "${BIN_PATH}/kbench" ./cmd/...
+  - name: run-kbench
+    image: zshusers/zsh:4.3.15
+    script: |
+      #!/usr/bin/env zsh
+      echo 'Running kbench...'
+      mkdir -p out
+      pwd
+      ls -al 
+      ls -al bin
+      ./bin/kbench \
+          -benchconfig $(resources.inputs.repo.path)/$(params.benchconfig) \
+          -outdir ./out
+      find out | xargs cat || true

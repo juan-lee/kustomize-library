@@ -1,0 +1,36 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: pipeline-template
+spec:
+  params:
+  - name: location
+    description: Location of the cluster
+    default: southcentralus
+  - name: target-node-count
+    description: Target node count of cluster
+    default: "50"
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      generateName: connectivity-managed-
+    spec:
+      timeout: 3h
+      pipelineRef:
+        name: connectivity
+      params:
+      - name: location
+        value: $(tt.params.location)
+      - name: target-node-count
+        value: $(tt.params.target-node-count)
+      - name: network-plugin
+        value: "azure"
+      - name: node-vm-size
+        value: "Standard_d2s_v3"
+      - name: node-osdisk-type
+        value: "Managed"
+      - name: node-osdisk-size
+        value: "50"
+      - name: nodepool-tags
+        value: "IgnorePeregrineVMWorkflow=true"

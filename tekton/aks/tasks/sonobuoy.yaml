@@ -1,0 +1,51 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: sonobuoy
+spec:
+  params:
+  - name: cluster-name
+    type: string
+  - name: resource-group
+    type: string
+  - name: mode
+    type: string
+    default: non-disruptive-conformance
+  - name: az-image
+    description: Azure CLI container image to run this task
+    default: mcr.microsoft.com/azure-cli:latest
+  stepTemplate:
+    env:
+    - name: "AZURE_CONFIG_DIR"
+      value: "/workspace/.azure"
+  steps:
+  - name: az-login
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+
+      mkdir -p "${AZURE_CONFIG_DIR}"
+      az login \
+        --service-principal \
+        -t $AZURE_TENANT_ID \
+        -u $AZURE_CLIENT_ID \
+        --federated-token $(cat $AZURE_FEDERATED_TOKEN_FILE) \
+        -o yaml
+  - name: az-aks-get-credentials
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+      az aks get-credentials -g $(params.resource-group) -n $(params.cluster-name)
+  - name: run-sonobuoy
+    image: gcr.io/cloud-builders/kubectl:latest
+    script: |
+      #!/usr/bin/env bash
+
+      curl -L https://github.com/vmware-tanzu/sonobuoy/releases/download/v0.50.0/sonobuoy_0.50.0_linux_amd64.tar.gz | tar xvz
+      echo 'Running sonobuoy...'
+      ./sonobuoy run --wait --mode $(params.mode)
+      kubectl logs -n sonobuoy sonobuoy
+      echo 'Retrieving results...'
+      results=$(./sonobuoy retrieve)
+      echo 'Dumping results...'
+      ./sonobuoy results $results

@@ -1,0 +1,20 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: generate-cluster-name
+spec:
+  params:
+  - name: prefix
+    default: cluster
+    type: string
+  results:
+  - name: cluster-name
+    description: Unique cluster name
+  steps:
+  - name: get-cluster-name
+    image: docker.io/library/bash:5.0.18
+    script: |
+      #!/usr/bin/env bash
+      ts=`date "+%Y%m%d-%H%M%S"`
+      cluster_name=$(inputs.params.prefix)-${ts}
+      echo ${cluster_name} | tr -d "\n" | tee $(results.cluster-name.path)

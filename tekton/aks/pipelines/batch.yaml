@@ -1,0 +1,64 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: batch
+spec:
+  params:
+  - name: resource-group
+    type: string
+    default: 'tekton-clusters'
+  - name: cluster-name
+    type: string
+    default: 'batch'
+  tasks:
+  - name: kubectl-create-job
+    taskRef:
+      name: aks-kubectl
+    params:
+    - name: cluster-name
+      value: $(params.cluster-name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        #!/bin/bash
+        set -euxo pipefail
+
+        kubectl -n default apply -k github.com/juan-lee/kustomize-library/sysbench
+  - name: kubectl-wait-job-complete
+    taskRef:
+      name: aks-kubectl
+    runAfter: [kubectl-create-job]
+    params:
+    - name: cluster-name
+      value: $(params.cluster-name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        #!/bin/bash
+        set -euxo pipefail
+
+        kubectl -n default wait job/sysbench --for=condition=Complete --timeout=6h
+    timeout: 6h
+  finally:
+  - name: dump-results-and-cleanup
+    taskRef:
+      name: aks-kubectl
+    params:
+    - name: cluster-name
+      value: $(params.cluster-name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        #!/bin/bash
+        set -euxo pipefail
+
+        kubectl version
+        kubectl cluster-info
+        kubectl auth can-i '*' '*'
+        kubectl get node -o wide
+        kubectl get pod -A -o wide
+        kubectl get job -A -o wide
+        kubectl -n default delete job sysbench

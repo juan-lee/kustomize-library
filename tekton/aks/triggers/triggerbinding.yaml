@@ -1,0 +1,10 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: cron-binding
+spec:
+  params:
+  - name: location
+    value: southcentralus
+  - name: target-node-count
+    value: "100"

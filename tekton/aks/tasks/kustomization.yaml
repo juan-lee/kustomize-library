@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- aks-kubectl.yaml
+- az-aks-create.yaml
+- az-aks-delete.yaml
+- az-aks-get-credentials.yaml
+- az-aks-scale.yaml
+- az-aks-upgrade.yaml
+- az-login.yaml
+- catalog.yaml
+- generate-cluster-name.yaml
+- kbench.yaml
+- sonobuoy.yaml

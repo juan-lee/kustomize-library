@@ -1,0 +1,183 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: autoscale
+spec:
+  params:
+  - name: resource-group
+    type: string
+    default: 'tekton-clusters'
+  - name: location
+    type: string
+    default: 'southcentralus'
+  - name: node-count
+    type: string
+    default: '3'
+  - name: sku-tier
+    type: string
+    default: 'Free'
+  - name: node-vm-size
+    type: string
+    default: 'Standard_D2s_v3'
+  - name: node-osdisk-type
+    type: string
+    default: 'Managed'
+  - name: node-osdisk-size
+    type: string
+    default: '30'
+  - name: nodepool-tags
+    type: string
+    default: "IgnorePeregrineVMWorkflow=true"
+  - name: network-plugin
+    type: string
+    default: 'kubenet'
+  - name: enable-cluster-autoscaler
+    type: string
+    default: 'true'
+  - name: optimize-os-disk
+    type: string
+    default: 'false'
+  tasks:
+  - name: create-cluster
+    taskRef:
+      name: az-aks-create
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: location
+      value: $(params.location)
+    - name: sku-tier
+      value: $(params.sku-tier)
+    - name: node-count
+      value: $(params.node-count)
+    - name: node-vm-size
+      value: $(params.node-vm-size)
+    - name: node-osdisk-type
+      value: $(params.node-osdisk-type)
+    - name: node-osdisk-size
+      value: $(params.node-osdisk-size)
+    - name: network-plugin
+      value: $(params.network-plugin)
+    - name: nodepool-tags
+      value: $(params.nodepool-tags)
+    - name: enable-cluster-autoscaler
+      value: $(params.enable-cluster-autoscaler)
+  - name: optimize-os-disk
+    taskRef:
+      name: aks-kubectl
+    runAfter: [create-cluster]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        #!/bin/bash
+        set -euxo pipefail
+
+        if [[ "$(params.optimize-os-disk)" == "true" ]]; then
+          kubectl apply -f https://gist.githubusercontent.com/juan-lee/ae23efe0318d356feebc40e4502443d5/raw/a22f4747b28a50ff4cc532e25b3c4e38b1a421e2/osdisk-optimizer.yaml
+        fi
+  - name: install-kube-prometheus
+    taskRef:
+      name: aks-kubectl
+    runAfter: [optimize-os-disk]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl cluster-info
+        kubectl version
+        kubectl apply --server-side -k "${@}" || sleep 5; kubectl apply --server-side -k "${@}"
+    - name: args
+      value:
+      - "https://github.com/prometheus-operator/kube-prometheus?ref=v0.10.0"
+  - name: kubectl-create-job
+    taskRef:
+      name: aks-kubectl
+    runAfter: [install-kube-prometheus]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        #!/bin/bash
+        set -euxo pipefail
+
+        kubectl -n default apply -k github.com/juan-lee/kustomize-library/sysbench
+  - name: dump-cluster-state
+    taskRef:
+      name: aks-kubectl
+    runAfter: [kubectl-create-job]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl version
+        kubectl cluster-info
+        kubectl auth can-i '*' '*'
+        kubectl get node -o wide
+        kubectl top node
+        kubectl get pod -A -o wide
+        kubectl top pod -A
+        kubectl get job -A -o wide
+  - name: kubectl-wait-job-complete
+    taskRef:
+      name: aks-kubectl
+    runAfter: [dump-cluster-state]
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        #!/bin/bash
+        set -euo pipefail
+
+        kubectl -n default get job -o wide
+        until kubectl -n default wait job/sysbench --for=condition=Complete --timeout=5s &> /dev/null
+        do
+          kubectl -n default get job -o wide --no-headers
+        done
+
+        kubectl -n default get job -o wide --no-headers
+    timeout: 6h
+  finally:
+  - name: dump-results
+    taskRef:
+      name: aks-kubectl
+    params:
+    - name: cluster-name
+      value: $(context.pipelineRun.name)
+    - name: resource-group
+      value: $(params.resource-group)
+    - name: script
+      value: |
+        kubectl version
+        kubectl cluster-info
+        kubectl auth can-i '*' '*'
+        kubectl get node -o wide
+        kubectl top node
+        kubectl get pod -A -o wide
+        kubectl top pod -A
+        kubectl get job -A -o wide
+  - name: delete-cluster
+    taskRef:
+      name: az-aks-delete
+    params:
+      - name: cluster-name
+        value: $(context.pipelineRun.name)
+      - name: resource-group
+        value: $(params.resource-group)

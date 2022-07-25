@@ -1,0 +1,17 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: k8s-conformance-
+  namespace: tekton
+spec:
+  timeout: 3h
+  params:
+  - name: node-vm-size
+    value: "Standard_d8s_v3"
+  - name: node-osdisk-type
+    value: "Managed"
+  - name: node-osdisk-size
+    value: "128"
+  pipelineRef:
+    name: kubernetes-conformance
+  serviceAccountName: azure-identity

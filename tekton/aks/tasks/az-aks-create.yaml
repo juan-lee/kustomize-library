@@ -1,0 +1,89 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: az-aks-create
+spec:
+  params:
+  - name: cluster-name
+    type: string
+  - name: resource-group
+    type: string
+  - name: location
+    type: string
+  - name: sku-tier
+    type: string
+    default: 'Free'
+  - name: node-count
+    type: string
+    default: '3'
+  - name: node-vm-size
+    type: string
+    default: 'Standard_DS2_v2'
+  - name: node-osdisk-type
+    type: string
+    default: 'Managed'
+  - name: node-osdisk-size
+    type: string
+    default: '128'
+  - name: nodepool-tags
+    type: string
+    default: ''
+  - name: network-plugin
+    type: string
+    default: 'kubenet'
+  - name: enable-cluster-autoscaler
+    type: string
+    default: 'false'
+  - name: az-image
+    description: Azure CLI container image to run this task
+    default: mcr.microsoft.com/azure-cli:latest
+  stepTemplate:
+    env:
+    - name: "AZURE_CONFIG_DIR"
+      value: "/workspace/.azure"
+  steps:
+  - name: az-login
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+
+      mkdir -p "${AZURE_CONFIG_DIR}"
+      az login \
+        --service-principal \
+        -t $AZURE_TENANT_ID \
+        -u $AZURE_CLIENT_ID \
+        --federated-token $(cat $AZURE_FEDERATED_TOKEN_FILE) \
+        -o yaml
+
+  - name: az-group-create
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+
+      az group show -n $(params.resource-group) -o yaml || \
+        az group create -n $(params.resource-group) -l $(params.location) --verbose -o yaml
+  - name: az-aks-create
+    image: "$(params.az-image)"
+    script: |
+      #!/usr/bin/env bash
+
+      sku_tier=""
+      if [[ "$(params.sku-tier)" == "Paid" ]]; then
+        sku_tier="--uptime-sla"
+      fi
+
+      cluster_autoscaler_limits=""
+      if [[ "$(params.enable-cluster-autoscaler)" == "true" ]]; then
+        cluster_autoscaler_params="--enable-cluster-autoscaler --min-count 1 --max-count 100"
+      fi
+
+      az aks create -g $(params.resource-group) -n $(params.cluster-name) -l $(params.location) \
+        --node-count $(params.node-count) \
+        --network-plugin $(params.network-plugin) \
+        --node-vm-size $(params.node-vm-size) \
+        --node-osdisk-type $(params.node-osdisk-type) \
+        --node-osdisk-size $(params.node-osdisk-size) \
+        --nodepool-tags "$(params.nodepool-tags)" \
+        ${cluster_autoscaler_params} \
+        ${sku_tier} \
+        --generate-ssh-keys --verbose -o yaml
